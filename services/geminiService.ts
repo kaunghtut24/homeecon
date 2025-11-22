@@ -2,10 +2,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ParsedReceiptData } from '../types';
 
 const getGenAI = () => {
-  if (!process.env.API_KEY) {
-    console.error("Missing API_KEY");
+  const apiKey = process.env.API_KEY || process.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) {
+    console.error("Missing Gemini API Key. Please set VITE_GEMINI_API_KEY in your .env file.");
+    throw new Error("Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file.");
   }
-  return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  return new GoogleGenAI({ apiKey });
 };
 
 export const parseReceiptImage = async (base64Image: string, mimeType: string = 'image/jpeg'): Promise<ParsedReceiptData> => {
@@ -20,12 +22,13 @@ export const parseReceiptImage = async (base64Image: string, mimeType: string = 
     **Line Item Extraction & Categorization:**
     List all individual line items.
     IMPORTANT: You MUST categorize each item into EXACTLY one of the following categories based on the item name:
-    - 'Groceries' (Food, Supermarket items)
+    - 'Food' (Groceries, Food, Supermarket items, Restaurants)
     - 'Utilities' (Electricity, Water, Internet, Phone)
-    - 'Education' (Books, Tuition, School supplies)
-    - 'Entertainment' (Movies, Games, Dining out at Restaurants, Hobbies)
-    - 'Housing' (Rent, Repairs, Furniture)
-    - 'Health' (Medicine, Doctor, Gym)
+    - 'Personal' (Books, Education, School supplies, Personal care)
+    - 'Entertainment' (Movies, Games, Hobbies, Dining out)
+    - 'Housing' (Rent, Repairs, Furniture, Home improvement)
+    - 'Medical' (Medicine, Doctor, Gym, Health, Healthcare)
+    - 'Transportation' (Gas, Car, Bus, Taxi, Travel expenses)
     - 'Other' (Anything else)
 
     Do NOT create new categories. Use 'Other' if unsure.
@@ -80,7 +83,25 @@ export const parseReceiptImage = async (base64Image: string, mimeType: string = 
     const data = JSON.parse(text) as ParsedReceiptData;
     
     if (!data.items) data.items = [];
-    if (!data.date) data.date = new Date().toISOString().split('T')[0];
+    
+    // Normalize date to YYYY-MM-DD format
+    if (data.date) {
+      try {
+        const dateObj = new Date(data.date);
+        if (!isNaN(dateObj.getTime())) {
+          const year = dateObj.getFullYear();
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          data.date = `${year}-${month}-${day}`;
+        } else {
+          data.date = new Date().toISOString().split('T')[0];
+        }
+      } catch (e) {
+        data.date = new Date().toISOString().split('T')[0];
+      }
+    } else {
+      data.date = new Date().toISOString().split('T')[0];
+    }
     
     return data;
   } catch (error) {

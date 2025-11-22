@@ -169,10 +169,24 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       currentUnsubscribe = onSnapshot(
         qWithoutOrderBy,
         (snapshot) => {
-          const docs = snapshot.docs.map(doc => ({
-            ...doc.data(),
-            id: doc.id
-          })) as Transaction[];
+          const docs = snapshot.docs.map(doc => {
+            const data = doc.data();
+            // Normalize items categories to ensure they're Category enum values
+            const normalizedItems = (data.items || []).map((item: any) => ({
+              ...item,
+              category: typeof item.category === 'string' 
+                ? (Object.values(Category).includes(item.category as Category) 
+                    ? item.category as Category 
+                    : Category.OTHER)
+                : (item.category || Category.OTHER)
+            }));
+            
+            return {
+              ...data,
+              id: doc.id,
+              items: normalizedItems
+            } as Transaction;
+          });
 
           // Sort client-side by date (descending)
           docs.sort((a, b) => {
@@ -323,12 +337,39 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       return;
     }
 
-    // Validate date format
-    if (cleanData.date && isNaN(new Date(cleanData.date).getTime())) {
-      console.error("Invalid date format:", cleanData.date);
-      alert(`Failed to save transaction: Invalid date format`);
-      return;
+    // Normalize and validate date format
+    if (cleanData.date) {
+      try {
+        // Try to parse the date and normalize to YYYY-MM-DD format
+        const dateObj = new Date(cleanData.date);
+        if (isNaN(dateObj.getTime())) {
+          throw new Error("Invalid date");
+        }
+        // Normalize to YYYY-MM-DD format
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        cleanData.date = `${year}-${month}-${day}`;
+      } catch (e) {
+        console.error("Invalid date format:", cleanData.date);
+        alert(`Failed to save transaction: Invalid date format. Please use YYYY-MM-DD format.`);
+        return;
+      }
     }
+
+    // Ensure items is always an array
+    if (!cleanData.items || !Array.isArray(cleanData.items)) {
+      cleanData.items = [];
+    }
+    
+    // Validate items array - ensure all items have required fields
+    cleanData.items = cleanData.items
+      .filter((item: any) => item && item.name && typeof item.amount === 'number' && item.category)
+      .map((item: any) => ({
+        name: item.name || 'Item',
+        amount: Number(item.amount) || 0,
+        category: item.category || Category.OTHER
+      }));
 
     try {
       await addDoc(collection(db, 'transactions'), cleanData);
@@ -449,19 +490,41 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
 
     filteredTransactions.forEach(t => {
       if (t.type === 'expense') {
-        t.items.forEach(item => {
-          const envIndex = currentEnvelopes.findIndex(e => e.category === item.category);
-          const itemNormalized = convertAmount(item.amount, t.currency);
+        // If transaction has items, use them; otherwise use total as a single item
+        if (t.items && t.items.length > 0) {
+          t.items.forEach(item => {
+            // Skip items with invalid amounts
+            if (!item.amount || isNaN(item.amount) || item.amount <= 0) return;
+            
+            // Ensure category is a valid Category enum value (handle string to enum conversion)
+            let itemCategory: Category;
+            if (typeof item.category === 'string') {
+              // Try to match string to Category enum
+              const categoryMatch = Object.values(Category).find(c => c === item.category);
+              itemCategory = categoryMatch || Category.OTHER;
+            } else {
+              itemCategory = item.category || Category.OTHER;
+            }
+            
+            const envIndex = currentEnvelopes.findIndex(e => e.category === itemCategory);
+            const itemNormalized = convertAmount(item.amount, t.currency);
 
-          if (envIndex >= 0) {
-            currentEnvelopes[envIndex].spent += itemNormalized;
-          } else {
-            // If category not found (e.g. hidden or deleted), maybe add to Other?
-            // Or just ignore? For now, let's try to find "Other"
-            const otherIdx = currentEnvelopes.findIndex(e => e.category === Category.OTHER);
-            if (otherIdx >= 0) currentEnvelopes[otherIdx].spent += itemNormalized;
+            if (envIndex >= 0) {
+              currentEnvelopes[envIndex].spent += itemNormalized;
+            } else {
+              // If category not found (e.g. hidden or deleted), add to Other
+              const otherIdx = currentEnvelopes.findIndex(e => e.category === Category.OTHER);
+              if (otherIdx >= 0) currentEnvelopes[otherIdx].spent += itemNormalized;
+            }
+          });
+        } else {
+          // No items - use transaction total as a single expense in "Other" category
+          const totalNormalized = convertAmount(t.total, t.currency);
+          const otherIdx = currentEnvelopes.findIndex(e => e.category === Category.OTHER);
+          if (otherIdx >= 0) {
+            currentEnvelopes[otherIdx].spent += totalNormalized;
           }
-        });
+        }
       }
     });
     return currentEnvelopes;

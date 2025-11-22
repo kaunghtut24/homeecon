@@ -68,9 +68,26 @@ export const ScanView = () => {
           const result = await parseReceiptImage(base64Data, file.type);
           
           setMerchantName(result.merchantName);
-          setDate(result.date);
+          // Normalize date format to YYYY-MM-DD
+          if (result.date) {
+            try {
+              const dateObj = new Date(result.date);
+              if (!isNaN(dateObj.getTime())) {
+                const year = dateObj.getFullYear();
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                setDate(`${year}-${month}-${day}`);
+              } else {
+                setDate(new Date().toISOString().split('T')[0]);
+              }
+            } catch (e) {
+              setDate(new Date().toISOString().split('T')[0]);
+            }
+          } else {
+            setDate(new Date().toISOString().split('T')[0]);
+          }
           setTotal(result.total);
-          setItems(result.items);
+          setItems(result.items || []);
           setType('expense'); // OCR is usually expense
           if (result.currency && CURRENCIES.find(c => c.code === result.currency)) {
              setCurrency(result.currency as CurrencyCode);
@@ -102,13 +119,61 @@ export const ScanView = () => {
     if (type === 'income') {
         finalItems = [{ name: 'Income Source', amount: total, category: Category.INCOME }];
     } else {
-         // Sanitize categories
-         finalItems = items.map(i => ({
+         // Map AI categories to Category enum and sanitize
+         const mapCategory = (cat: string): Category => {
+           const categoryMap: Record<string, Category> = {
+             'Groceries': Category.FOOD,
+             'Food': Category.FOOD,
+             'Utilities': Category.UTILITIES,
+             'Education': Category.PERSONAL,
+             'Personal': Category.PERSONAL,
+             'Entertainment': Category.ENTERTAINMENT,
+             'Housing': Category.HOUSING,
+             'Health': Category.MEDICAL,
+             'Medical': Category.MEDICAL,
+             'Transportation': Category.TRANSPORTATION,
+             'Travel': Category.TRAVEL,
+             'Insurance': Category.INSURANCE,
+             'Savings': Category.SAVINGS,
+             'Social Contribution': Category.SOCIAL_CONTRIBUTION,
+             'Other': Category.OTHER
+           };
+           
+           // Try exact match first
+           if (Object.values(Category).includes(cat as Category)) {
+             return cat as Category;
+           }
+           
+           // Try mapped category
+           const mapped = categoryMap[cat];
+           if (mapped) return mapped;
+           
+           // Try case-insensitive match
+           const lowerCat = cat.toLowerCase();
+           for (const [key, value] of Object.entries(categoryMap)) {
+             if (key.toLowerCase() === lowerCat) return value;
+           }
+           
+           // Default to Other
+           return Category.OTHER;
+         };
+         
+         // Map categories and ensure all items are valid
+         finalItems = items
+           .filter(i => i && i.name && i.amount > 0) // Filter out invalid items
+           .map(i => ({
             ...i,
-            category: (Object.values(Category).includes(i.category as Category) 
-              ? i.category as Category 
-              : Category.OTHER)
+            category: mapCategory(i.category || 'Other')
           }));
+         
+         // If no valid items after filtering, create a default item from total
+         if (finalItems.length === 0 && total > 0) {
+           finalItems = [{
+             name: merchantName || 'Expense',
+             amount: total,
+             category: Category.OTHER
+           }];
+         }
     }
 
     // Calculate exchange rate safely

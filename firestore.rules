@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved';
+    }
+    
+    // Helper function to check if user is approved
+    function isApproved() {
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved';
+    }
+    
+    // User profiles
+    match /users/{userId} {
+      // Anyone authenticated can read their own profile
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Users can create their own profile during signup
+      allow create: if request.auth != null && 
+                       request.auth.uid == userId;
+      
+      // Users can update their own profile (except admin/status fields)
+      allow update: if request.auth != null && 
+                       request.auth.uid == userId &&
+                       !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['isAdmin', 'status', 'approvedBy', 'approvedAt']);
+      
+      // Admins can read all users
+      allow read: if request.auth != null && isAdmin();
+      
+      // Admins can update any user (including admin/status fields)
+      allow update: if request.auth != null && isAdmin();
+    }
+    
+    // Families
+    match /families/{familyId} {
+      allow read: if request.auth != null && 
+                     isApproved() &&
+                     request.auth.uid in resource.data.memberIds;
+      allow create: if request.auth != null && isApproved();
+      allow update: if request.auth != null && 
+                       isApproved() &&
+                       request.auth.uid in resource.data.memberIds;
+    }
+    
+    // Transactions
+    match /transactions/{transactionId} {
+      // Allow read if user owns it or is in the family
+      allow read: if request.auth != null && 
+                     isApproved() &&
+                     (resource.data.userId == request.auth.uid ||
+                      (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == resource.data.familyId));
+      
+      // Allow create if authenticated and approved
+      allow create: if request.auth != null && 
+                       isApproved() &&
+                       request.resource.data.userId == request.auth.uid;
+      
+      // Allow update/delete only if owner
+      allow update, delete: if request.auth != null && 
+                               isApproved() &&
+                               resource.data.userId == request.auth.uid;
+    }
+    
+    // User settings (budgets)
+    match /user_settings/{userId} {
+      allow read, write: if request.auth != null && 
+                            isApproved() &&
+                            request.auth.uid == userId;
+    }
+  }
+}

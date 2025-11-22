@@ -1,0 +1,7 @@
+{
+  "name": "HomeEcon",
+  "description": "A zero-learning-curve family finance tracker featuring AI-powered receipt scanning, envelope budgeting, and comprehensive PDF reporting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

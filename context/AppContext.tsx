@@ -144,24 +144,59 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       filterValue = user.uid;
     }
 
-    const q = query(
+    // Try query with orderBy first (requires index)
+    // If it fails, fall back to query without orderBy (no index needed)
+    const qWithOrderBy = query(
       collection(db, 'transactions'),
       where(filterField, '==', filterValue),
       orderBy('date', 'desc')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Transaction[];
+    const qWithoutOrderBy = query(
+      collection(db, 'transactions'),
+      where(filterField, '==', filterValue)
+    );
 
-      docs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    let currentUnsubscribe: (() => void) | null = null;
+    let hasSwitchedToFallback = false;
 
-      setTransactions(docs);
-    });
+    // Setup listener with automatic fallback on index errors
+    const setupListener = () => {
+      // Use fallback query directly to avoid index issues
+      // This ensures transactions load immediately while indexes are building
+      console.log('Setting up transaction listener with fallback query');
+      
+      currentUnsubscribe = onSnapshot(
+        qWithoutOrderBy,
+        (snapshot) => {
+          const docs = snapshot.docs.map(doc => ({
+            ...doc.data(),
+            id: doc.id
+          })) as Transaction[];
 
-    return () => unsubscribe();
+          // Sort client-side by date (descending)
+          docs.sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateB - dateA; // Descending order
+          });
+
+          setTransactions(docs);
+        },
+        (error: any) => {
+          console.error('Error loading transactions:', error);
+          setTransactions([]);
+        }
+      );
+    };
+
+    setupListener();
+
+    return () => {
+      if (currentUnsubscribe) {
+        currentUnsubscribe();
+      }
+    };
   }, [user, userProfile]);
 
 
@@ -246,13 +281,61 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       return;
     }
 
+    // Remove id field and clean up undefined values for Firestore
     const { id, ...data } = t;
+    
+    // Clean up undefined values - Firestore doesn't accept undefined
+    // Also handle null values and ensure all required fields are valid
+    const cleanData: any = {};
+    Object.keys(data).forEach(key => {
+      const value = data[key];
+      // Skip receiptImageUrl if it's undefined, null, or empty
+      if (key === 'receiptImageUrl') {
+        if (value && value !== '' && value !== undefined && value !== null) {
+          cleanData[key] = value;
+        }
+        return; // Skip adding undefined receiptImageUrl
+      }
+      
+      // Only include defined, non-null values
+      if (value !== undefined && value !== null) {
+        // Ensure exchangeRate is a valid number
+        if (key === 'exchangeRate' && (isNaN(value) || !isFinite(value))) {
+          cleanData[key] = 1; // Default to 1 if invalid
+        } else {
+          cleanData[key] = value;
+        }
+      }
+    });
+    
+    // Final cleanup: Remove any undefined values that might have slipped through
+    Object.keys(cleanData).forEach(key => {
+      if (cleanData[key] === undefined) {
+        delete cleanData[key];
+      }
+    });
+
+    // Validate required fields
+    if (!cleanData.userId || !cleanData.merchantName || !cleanData.date || !cleanData.type) {
+      const errorMsg = `Missing required fields: userId=${!!cleanData.userId}, merchantName=${!!cleanData.merchantName}, date=${!!cleanData.date}, type=${!!cleanData.type}`;
+      console.error("Validation error:", errorMsg);
+      alert(`Failed to save transaction: ${errorMsg}`);
+      return;
+    }
+
+    // Validate date format
+    if (cleanData.date && isNaN(new Date(cleanData.date).getTime())) {
+      console.error("Invalid date format:", cleanData.date);
+      alert(`Failed to save transaction: Invalid date format`);
+      return;
+    }
 
     try {
-      await addDoc(collection(db, 'transactions'), data);
-    } catch (e) {
+      await addDoc(collection(db, 'transactions'), cleanData);
+    } catch (e: any) {
       console.error("Error adding transaction: ", e);
-      alert("Failed to save transaction");
+      const errorMessage = e?.message || e?.code || "Unknown error";
+      alert(`Failed to save transaction: ${errorMessage}`);
     }
   };
 

@@ -233,6 +233,37 @@ service cloud.firestore {
 }
 ```
 
+## Firestore Indexes
+
+The app requires composite indexes for efficient querying of transactions. These indexes are defined in `firestore.indexes.json`.
+
+### Deploying Indexes
+
+1. **Using Firebase CLI** (Recommended)
+   ```bash
+   firebase deploy --only firestore:indexes
+   ```
+
+2. **Manual Setup via Console**
+   
+   If you see index errors in the console, click the link provided in the error message to create the index automatically, or manually create these indexes in Firebase Console → Firestore Database → Indexes:
+
+   **Index 1: Transactions by familyId and date**
+   - Collection: `transactions`
+   - Fields:
+     - `familyId` (Ascending)
+     - `date` (Descending)
+
+   **Index 2: Transactions by userId and date**
+   - Collection: `transactions`
+   - Fields:
+     - `userId` (Ascending)
+     - `date` (Descending)
+
+### Automatic Index Creation
+
+Firebase will automatically prompt you to create indexes when you first run queries that require them. Click the link in the error message to create the index in the Firebase Console.
+
 ## Firebase Authentication Setup
 
 1. Go to Firebase Console → Authentication

@@ -111,7 +111,13 @@ export const ScanView = () => {
           }));
     }
 
-    addTransaction({
+    // Calculate exchange rate safely
+    const currencyRate = rates[currency] || 1;
+    const usdRate = rates['USD'] || 1;
+    const exchangeRate = currencyRate / usdRate;
+
+    // Prepare transaction object - only include receiptImageUrl if it exists
+    const transactionData: any = {
       id: Date.now().toString(),
       merchantName,
       date,
@@ -120,11 +126,17 @@ export const ScanView = () => {
       subtotal: total,
       tax: 0,
       total,
-      exchangeRate: rates[currency] / rates['USD'],
+      exchangeRate: isNaN(exchangeRate) || !isFinite(exchangeRate) ? 1 : exchangeRate,
       normalizedTotal: 0, // Context handles this
-      items: finalItems,
-      receiptImageUrl: imagePreview || undefined
-    });
+      items: finalItems
+    };
+
+    // Only add receiptImageUrl if it has a valid value
+    if (imagePreview && imagePreview.trim() !== '') {
+      transactionData.receiptImageUrl = imagePreview;
+    }
+
+    addTransaction(transactionData);
 
     setView('dashboard');
   };

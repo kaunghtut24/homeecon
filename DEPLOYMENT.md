@@ -200,11 +200,12 @@ service cloud.firestore {
     
     // Families
     match /families/{familyId} {
-      allow read: if request.auth != null && 
-                     request.auth.uid in resource.data.memberIds;
+      // Allow reading family documents by invite code (for validation during signup)
+      // Unauthenticated reads are needed for signup validation before user is created
+      allow read: if true;
       allow create: if request.auth != null;
       allow update: if request.auth != null && 
-                       request.auth.uid in resource.data.memberIds;
+                       request.auth.uid in resource.data.members;
     }
     
     // Transactions

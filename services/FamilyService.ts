@@ -47,23 +47,27 @@ export const FamilyService = {
 
     async joinFamily(familyId: string, user: UserProfile): Promise<Family | null> {
         if (isMockMode) {
-            const savedFamily = localStorage.getItem(`mock_family_${familyId}`);
+            // Normalize familyId to uppercase to match how families are created
+            const normalizedFamilyId = familyId.toUpperCase();
+            const savedFamily = localStorage.getItem(`mock_family_${normalizedFamilyId}`);
             if (!savedFamily) throw new Error("Family not found");
 
             const family = JSON.parse(savedFamily) as Family;
             if (!family.members.includes(user.uid)) {
                 family.members.push(user.uid);
-                localStorage.setItem(`mock_family_${familyId}`, JSON.stringify(family));
+                localStorage.setItem(`mock_family_${normalizedFamilyId}`, JSON.stringify(family));
             }
 
-            const updatedUser = { ...user, familyId };
+            const updatedUser = { ...user, familyId: normalizedFamilyId };
             localStorage.setItem('mock_user_profile', JSON.stringify(updatedUser));
 
             return family;
         }
 
         try {
-            const familyRef = doc(db, 'families', familyId);
+            // Normalize familyId to uppercase to match how families are created
+            const normalizedFamilyId = familyId.toUpperCase();
+            const familyRef = doc(db, 'families', normalizedFamilyId);
             const familySnap = await getDoc(familyRef);
 
             if (!familySnap.exists()) {
@@ -77,7 +81,7 @@ export const FamilyService = {
 
             // 2. Update User Profile
             const userRef = doc(db, 'users', user.uid);
-            await setDoc(userRef, { familyId }, { merge: true });
+            await setDoc(userRef, { familyId: normalizedFamilyId }, { merge: true });
 
             return familySnap.data() as Family;
         } catch (e) {

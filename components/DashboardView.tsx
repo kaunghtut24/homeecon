@@ -29,7 +29,8 @@ export const DashboardView = () => {
     updateRate,
     refreshRates,
     getTransactionsForPeriod,
-    convertAmount
+    convertAmount,
+    openingBalance
   } = useApp();
 
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
@@ -154,7 +155,14 @@ export const DashboardView = () => {
           <p className="text-3xl font-bold text-red-600">{currencySymbol}{currentMonthExpense.toLocaleString()}</p>
         </div>
         <div className={`p-6 rounded-2xl shadow-sm border flex flex-col justify-between h-32 ${netSavings >= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'}`}>
-          <p className={`text-xs font-bold uppercase tracking-wider ${netSavings >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>Net Savings</p>
+          <div className="flex justify-between items-start">
+            <p className={`text-xs font-bold uppercase tracking-wider ${netSavings >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>Net Savings</p>
+            <Tooltip content="Total accumulated savings from all time" position="left">
+              <span className="text-[10px] font-bold bg-white bg-opacity-50 px-2 py-1 rounded-full text-slate-600">
+                Pool: {currencySymbol}{(openingBalance + netSavings).toLocaleString()}
+              </span>
+            </Tooltip>
+          </div>
           <p className={`text-3xl font-bold ${netSavings >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{currencySymbol}{netSavings.toLocaleString()}</p>
         </div>
       </div>

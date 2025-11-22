@@ -4,6 +4,7 @@ import { INITIAL_ENVELOPES } from '../constants';
 import { db, isMockMode } from '../services/firebase';
 import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { BudgetService, BudgetConfig } from '../services/BudgetService';
 
 interface AppContextType {
   currentView: ViewState;
@@ -23,6 +24,14 @@ interface AppContextType {
   envelopes: Envelope[];
   currentMonthIncome: number;
   currentMonthExpense: number;
+  openingBalance: number; // Rollover from previous months
+  netSavings: number; // Current month savings
+
+  // Budget Management
+  budgets: BudgetConfig[];
+  updateBudget: (categoryId: string, limit: number) => Promise<void>;
+  addCategory: (name: string, limit: number, color: string) => Promise<void>;
+  toggleCategory: (categoryId: string, isHidden: boolean) => Promise<void>;
 
   // Currency
   homeCurrency: CurrencyCode;
@@ -66,6 +75,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
   const [initialInputMode, setInitialInputMode] = useState<'income' | 'expense' | null>(null);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [budgets, setBudgets] = useState<BudgetConfig[]>([]);
 
   const [homeCurrency, setHomeCurrency] = useState<CurrencyCode>(() => {
     try {
@@ -90,6 +100,20 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
 
   // -- Persistence Effects --
 
+  // Load Budgets
+  useEffect(() => {
+    const loadBudgets = async () => {
+      if (userProfile) {
+        const loaded = await BudgetService.getUserBudgets(userProfile);
+        setBudgets(loaded);
+      } else {
+        // Default if no user yet (or loading)
+        setBudgets(BudgetService.getDefaultBudgets());
+      }
+    };
+    loadBudgets();
+  }, [userProfile]);
+
   // Listen to Firestore Transactions or Load Mock Data
   useEffect(() => {
     if (!user) {
@@ -105,15 +129,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       return;
     }
 
-    // Determine query filter: Family ID takes precedence, else User ID
-    // We need to wait for userProfile to be loaded? 
-    // Actually, AuthContext loads it. We can access it via useAuth().
-    // But we need to add it to the dependency array.
-
-    // Note: We need to handle the case where userProfile is loading.
-    // For now, we'll assume if user is present, we check the profile.
-    if (userProfile === undefined) { // userProfile is null if not found, undefined if still loading
-      // User is logged in, but profile is still loading. Wait for it.
+    if (userProfile === undefined) {
       return;
     }
 
@@ -131,7 +147,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
     const q = query(
       collection(db, 'transactions'),
       where(filterField, '==', filterValue),
-      orderBy('date', 'desc') // Order by date descending
+      orderBy('date', 'desc')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -140,7 +156,6 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
         id: doc.id
       })) as Transaction[];
 
-      // Sort by date desc (Firestore orderBy handles this, but keeping for consistency/mock mode)
       docs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
       setTransactions(docs);
@@ -231,7 +246,6 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       return;
     }
 
-    // Remove id if it exists, let Firestore generate it
     const { id, ...data } = t;
 
     try {
@@ -266,12 +280,40 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
         return;
       }
 
-      // Delete all user transactions
-      // Note: In a real app, use a batch or cloud function for this
       transactions.forEach(t => {
         deleteTransaction(t.id);
       });
     }
+  };
+
+  // -- Budget Actions --
+  const updateBudget = async (categoryId: string, limit: number) => {
+    if (!userProfile) return;
+    const newBudgets = budgets.map(b => b.categoryId === categoryId ? { ...b, limit } : b);
+    setBudgets(newBudgets);
+    await BudgetService.saveUserBudgets(userProfile, newBudgets);
+  };
+
+  const addCategory = async (name: string, limit: number, color: string) => {
+    if (!userProfile) return;
+    const newCategory: BudgetConfig = {
+      categoryId: name, // Use name as ID for custom
+      name,
+      limit,
+      color,
+      isHidden: false,
+      isCustom: true
+    };
+    const newBudgets = [...budgets, newCategory];
+    setBudgets(newBudgets);
+    await BudgetService.saveUserBudgets(userProfile, newBudgets);
+  };
+
+  const toggleCategory = async (categoryId: string, isHidden: boolean) => {
+    if (!userProfile) return;
+    const newBudgets = budgets.map(b => b.categoryId === categoryId ? { ...b, isHidden } : b);
+    setBudgets(newBudgets);
+    await BudgetService.saveUserBudgets(userProfile, newBudgets);
   };
 
   // -- Computed Data --
@@ -296,8 +338,31 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       .reduce((sum, t) => sum + convertAmount(t.total, t.currency), 0);
   }, [filteredTransactions, homeCurrency, rates]);
 
+  const netSavings = currentMonthIncome - currentMonthExpense;
+
+  // Calculate Opening Balance (Sum of all PREVIOUS months)
+  const openingBalance = useMemo(() => {
+    const startOfSelectedMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
+
+    return transactions
+      .filter(t => new Date(t.date) < startOfSelectedMonth)
+      .reduce((sum, t) => {
+        const amount = convertAmount(t.total, t.currency);
+        return t.type === 'income' ? sum + amount : sum - amount;
+      }, 0);
+  }, [transactions, selectedMonth, homeCurrency, rates]);
+
   const envelopes = useMemo(() => {
-    const currentEnvelopes = JSON.parse(JSON.stringify(INITIAL_ENVELOPES)) as Envelope[];
+    // Use dynamic budgets instead of INITIAL_ENVELOPES
+    // Filter out hidden categories
+    const currentEnvelopes: Envelope[] = budgets
+      .filter(b => !b.isHidden)
+      .map(b => ({
+        category: b.categoryId as Category, // Cast for now, or update Envelope type
+        budgeted: b.limit,
+        spent: 0,
+        color: b.color
+      }));
 
     filteredTransactions.forEach(t => {
       if (t.type === 'expense') {
@@ -308,6 +373,8 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
           if (envIndex >= 0) {
             currentEnvelopes[envIndex].spent += itemNormalized;
           } else {
+            // If category not found (e.g. hidden or deleted), maybe add to Other?
+            // Or just ignore? For now, let's try to find "Other"
             const otherIdx = currentEnvelopes.findIndex(e => e.category === Category.OTHER);
             if (otherIdx >= 0) currentEnvelopes[otherIdx].spent += itemNormalized;
           }
@@ -315,7 +382,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       }
     });
     return currentEnvelopes;
-  }, [filteredTransactions, homeCurrency, rates]);
+  }, [filteredTransactions, homeCurrency, rates, budgets]);
 
 
   const getTransactionsForPeriod = (period: 'month' | 'quarter' | 'year') => {
@@ -356,6 +423,12 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       nextMonth,
       currentMonthIncome,
       currentMonthExpense,
+      openingBalance,
+      netSavings,
+      budgets,
+      updateBudget,
+      addCategory,
+      toggleCategory,
       getTransactionsForPeriod
     }}>
       {children}

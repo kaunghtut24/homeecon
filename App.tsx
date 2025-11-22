@@ -6,6 +6,7 @@ import { ScanView } from './components/ScanView';
 import { LoginView } from './components/LoginView';
 import { SignupView } from './components/SignupView';
 import { FamilySettingsView } from './components/FamilySettingsView';
+import { CategorySettingsView } from './components/CategorySettingsView';
 
 import { Tooltip } from './components/Tooltip';
 
@@ -39,6 +40,14 @@ const MainLayout = () => {
               onClick={() => setView('scan')}
               icon={<ScanIcon />}
               label="Smart Scan"
+            />
+          </Tooltip>
+          <Tooltip content="Manage budget categories" position="right">
+            <NavButton
+              active={currentView === 'categories'}
+              onClick={() => setView('categories')}
+              icon={<ChartIcon />}
+              label="Categories"
             />
           </Tooltip>
           <Tooltip content="Manage family and app settings" position="right">
@@ -91,6 +100,7 @@ const MainLayout = () => {
         <div className="max-w-6xl mx-auto w-full">
           {currentView === 'dashboard' && <DashboardView />}
           {currentView === 'scan' && <ScanView />}
+          {currentView === 'categories' && <CategorySettingsView />}
           {currentView === 'settings' && <FamilySettingsView />}
         </div>
       </main>
@@ -111,6 +121,12 @@ const MainLayout = () => {
             <ScanIcon className="w-8 h-8" />
           </button>
         </div>
+        <MobileNavButton
+          active={currentView === 'categories'}
+          onClick={() => setView('categories')}
+          icon={<ChartIcon />}
+          label="Budget"
+        />
         <MobileNavButton
           active={currentView === 'settings'}
           onClick={() => setView('settings')}

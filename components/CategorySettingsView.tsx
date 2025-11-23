@@ -3,16 +3,28 @@ import { useApp } from '../context/AppContext';
 import { Category } from '../types';
 import { Tooltip } from './Tooltip';
 
-const BudgetRow = ({ budget, homeCurrency, updateBudget, toggleCategory }: any) => {
-    const [limit, setLimit] = useState(budget.limit.toString());
+const BudgetRow = ({ budget, homeCurrency, updateBudget, toggleCategory, convertAmount }: any) => {
+    // Initialize with converted amount if currency differs, otherwise use raw limit
+    const initialAmount = budget.currency
+        ? convertAmount(budget.limit, budget.currency)
+        : budget.limit;
 
-    const handleBlur = () => {
+    const [limit, setLimit] = useState(initialAmount.toString());
+    const [isDirty, setIsDirty] = useState(false);
+
+    const handleSave = () => {
         const val = parseFloat(limit);
-        if (!isNaN(val) && val >= 0 && val !== budget.limit) {
+        if (!isNaN(val) && val >= 0) {
             updateBudget(budget.categoryId, val);
+            setIsDirty(false);
         } else {
-            setLimit(budget.limit.toString()); // Reset if invalid or unchanged
+            setLimit(initialAmount.toString()); // Reset if invalid
         }
+    };
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setLimit(e.target.value);
+        setIsDirty(true);
     };
 
     return (
@@ -22,14 +34,22 @@ const BudgetRow = ({ budget, homeCurrency, updateBudget, toggleCategory }: any) 
                 <span>{budget.name}</span>
                 {budget.isCustom && <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">Custom</span>}
             </td>
-            <td className="px-6 py-4">
+            <td className="px-6 py-4 flex items-center space-x-2">
                 <input
                     type="number"
                     value={limit}
-                    onChange={(e) => setLimit(e.target.value)}
-                    onBlur={handleBlur}
+                    onChange={handleChange}
                     className="w-24 px-2 py-1 border border-slate-200 rounded focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200 outline-none transition-all"
                 />
+                {isDirty && (
+                    <button
+                        onClick={handleSave}
+                        className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                        title="Save Budget"
+                    >
+                        💾
+                    </button>
+                )}
             </td>
             <td className="px-6 py-4 text-center">
                 <div className="w-6 h-6 rounded-full mx-auto border border-slate-200" style={{ backgroundColor: budget.color }}></div>
@@ -48,7 +68,7 @@ const BudgetRow = ({ budget, homeCurrency, updateBudget, toggleCategory }: any) 
 };
 
 export const CategorySettingsView = () => {
-    const { budgets, updateBudget, addCategory, toggleCategory, homeCurrency } = useApp();
+    const { budgets, updateBudget, addCategory, toggleCategory, homeCurrency, convertAmount } = useApp();
     const [showAddModal, setShowAddModal] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newCategoryLimit, setNewCategoryLimit] = useState('');
@@ -101,6 +121,7 @@ export const CategorySettingsView = () => {
                                     homeCurrency={homeCurrency}
                                     updateBudget={updateBudget}
                                     toggleCategory={toggleCategory}
+                                    convertAmount={convertAmount}
                                 />
                             ))}
                         </tbody>

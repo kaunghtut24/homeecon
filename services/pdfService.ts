@@ -16,13 +16,20 @@ export const generateFinancialReport = (
   const pageHeight = doc.internal.pageSize.height;
   const currencySymbol = CURRENCIES.find(c => c.code === homeCurrency)?.symbol || '$';
 
-  const formatCurrency = (amount: number) => `${currencySymbol}${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+  // Standard PDF fonts (Helvetica) only support a limited set of currency symbols (Windows-1252)
+  // We use a safe list and fallback to the currency code (e.g. "INR") for others to avoid artifacts.
+  const SAFE_SYMBOLS = ['$', '€', '£', '¥'];
+
+  const formatCurrency = (amount: number) => {
+    const symbolToUse = SAFE_SYMBOLS.includes(currencySymbol) ? currencySymbol : `${homeCurrency} `;
+    return `${symbolToUse}${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  };
 
   // Calculate Totals based on the passed transactions
   const totalIncome = transactions
     .filter(t => t.type === 'income')
     .reduce((sum, t) => sum + t.normalizedTotal, 0);
-    
+
   const totalExpense = transactions
     .filter(t => t.type === 'expense')
     .reduce((sum, t) => sum + t.normalizedTotal, 0);
@@ -30,13 +37,13 @@ export const generateFinancialReport = (
   const netSavings = totalIncome - totalExpense;
 
   // -- Header --
-  doc.setFillColor(16, 185, 129); 
+  doc.setFillColor(16, 185, 129);
   doc.rect(0, 0, pageWidth, 30, 'F');
-  
+
   doc.setFontSize(20);
   doc.setTextColor(255, 255, 255);
   doc.text('HomeEcon Financial Report', 14, 20);
-  
+
   doc.setFontSize(10);
   doc.text(`Period: ${period.toUpperCase()} ending ${referenceDate.toLocaleDateString()}`, 14, 26);
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth - 60, 20);
@@ -75,14 +82,14 @@ export const generateFinancialReport = (
   doc.setFillColor(netColorBg[0], netColorBg[1], netColorBg[2]);
   doc.roundedRect(14 + (cardWidth + 7) * 2, startY, cardWidth, cardHeight, 3, 3, 'F');
   doc.setFontSize(8);
-  doc.setTextColor(netSavings >= 0 ? 37 : 194, netSavings >= 0 ? 99 : 65, netSavings >= 0 ? 235 : 12); 
+  doc.setTextColor(netSavings >= 0 ? 37 : 194, netSavings >= 0 ? 99 : 65, netSavings >= 0 ? 235 : 12);
   doc.text('NET SAVINGS', 19 + (cardWidth + 7) * 2, startY + 8);
   doc.setFontSize(12);
   doc.text(formatCurrency(netSavings), 19 + (cardWidth + 7) * 2, startY + 18);
 
   // -- Transactions Table --
   const transY = startY + cardHeight + 15;
-  
+
   doc.setFontSize(14);
   doc.setTextColor(30, 41, 59);
   doc.text('Transaction History', 14, transY);
@@ -106,19 +113,19 @@ export const generateFinancialReport = (
     headStyles: { fillColor: [241, 245, 249], textColor: [71, 85, 105], fontStyle: 'bold', lineWidth: 0 },
     bodyStyles: { textColor: [51, 65, 85] },
     columnStyles: {
-        0: { cellWidth: 25 },
-        1: { cellWidth: 'auto' },
-        2: { cellWidth: 15 },
-        3: { cellWidth: 25, halign: 'right' },
-        4: { cellWidth: 30, halign: 'right' }
+      0: { cellWidth: 25 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 15 },
+      3: { cellWidth: 25, halign: 'right' },
+      4: { cellWidth: 30, halign: 'right' }
     },
     didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 4) {
-            const originalRow = sortedTrans[data.row.index];
-            if (originalRow.type === 'income') {
-                data.cell.styles.textColor = [22, 163, 74]; // Green
-            }
+      if (data.section === 'body' && data.column.index === 4) {
+        const originalRow = sortedTrans[data.row.index];
+        if (originalRow.type === 'income') {
+          data.cell.styles.textColor = [22, 163, 74]; // Green
         }
+      }
     }
   });
 

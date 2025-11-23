@@ -12,7 +12,7 @@ const getGenAI = () => {
 
 export const parseReceiptImage = async (base64Image: string, mimeType: string = 'image/jpeg'): Promise<ParsedReceiptData> => {
   const ai = getGenAI();
-  
+
   const prompt = `
     Analyze this receipt image. Extract the merchant name, date (YYYY-MM-DD), subtotal, tax, and total amount.
     
@@ -79,11 +79,11 @@ export const parseReceiptImage = async (base64Image: string, mimeType: string = 
 
     const text = response.text;
     if (!text) throw new Error("No response from AI");
-    
+
     const data = JSON.parse(text) as ParsedReceiptData;
-    
+
     if (!data.items) data.items = [];
-    
+
     // Normalize date to YYYY-MM-DD format
     if (data.date) {
       try {
@@ -102,10 +102,11 @@ export const parseReceiptImage = async (base64Image: string, mimeType: string = 
     } else {
       data.date = new Date().toISOString().split('T')[0];
     }
-    
+
     return data;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini OCR Error:", error);
-    throw new Error("Failed to analyze receipt. Please try again or enter manually.");
+    const errorMessage = error.message || "Unknown error occurred";
+    throw new Error(`Failed to analyze receipt: ${errorMessage}`);
   }
 };

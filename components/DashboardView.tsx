@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 
 import { Tooltip } from './Tooltip';
+import { parseDate } from '../utils/dateUtils';
 
 export const DashboardView = () => {
   const {
@@ -30,7 +31,9 @@ export const DashboardView = () => {
     refreshRates,
     getTransactionsForPeriod,
     convertAmount,
-    openingBalance
+    openingBalance,
+    isRolloverEnabled,
+    toggleRollover
   } = useApp();
 
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
@@ -38,21 +41,30 @@ export const DashboardView = () => {
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
 
   const currencySymbol = CURRENCIES.find(c => c.code === homeCurrency)?.symbol || '$';
-  const netSavings = currentMonthIncome - currentMonthExpense;
+
+  // Calculate displayed amounts based on Rollover setting
+  const displayedIncome = isRolloverEnabled ? currentMonthIncome + openingBalance : currentMonthIncome;
+  const netSavings = displayedIncome - currentMonthExpense;
 
   // Filter transactions for display
   const monthTransactions = transactions.filter(t => {
-    const tDate = new Date(t.date);
+    const tDate = parseDate(t.date);
     return tDate.getMonth() === selectedMonth.getMonth() &&
       tDate.getFullYear() === selectedMonth.getFullYear();
-  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }).sort((a, b) => parseDate(b.date).getTime() - parseDate(a.date).getTime());
 
   // Chart Data (Daily Trend)
   const lineData = React.useMemo(() => {
     const daysInMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).getDate();
     const data = [];
     for (let i = 1; i <= daysInMonth; i++) {
-      const dateStr = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), i).toISOString().split('T')[0];
+      // Construct local date string for comparison
+      const d = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
       const dailyTotal = transactions
         .filter(t => t.date === dateStr && t.type === 'expense')
         .reduce((sum, t) => sum + t.normalizedTotal, 0);
@@ -65,7 +77,14 @@ export const DashboardView = () => {
   }, [transactions, selectedMonth, homeCurrency]);
 
   const handleDownloadReport = (period: 'month' | 'quarter' | 'year') => {
-    const data = getTransactionsForPeriod(period);
+    const rawData = getTransactionsForPeriod(period);
+    // Recalculate normalizedTotal based on current Home Currency settings
+    // This ensures the report matches the dashboard even if currency settings changed since the transaction was saved
+    const data = rawData.map(t => ({
+      ...t,
+      normalizedTotal: convertAmount(t.total, t.currency)
+    }));
+
     generateFinancialReport(data, envelopes, homeCurrency, period, selectedMonth);
     setShowReportModal(false);
   };
@@ -137,6 +156,20 @@ export const DashboardView = () => {
           </Tooltip>
         </div>
       </header>
+      {/* Rollover Toggle */}
+      <div className="flex justify-end">
+        <div className="flex items-center space-x-3 bg-white p-2 rounded-lg shadow-sm border border-slate-100">
+          <span className="text-sm font-medium text-slate-600">Rollover Balance</span>
+          <button
+            onClick={toggleRollover}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isRolloverEnabled ? 'bg-emerald-500' : 'bg-slate-200'}`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isRolloverEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+            />
+          </button>
+        </div>
+      </div>
 
       {/* Top Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -145,7 +178,14 @@ export const DashboardView = () => {
             <svg className="w-24 h-24 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" /><path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" /></svg>
           </div>
           <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Income</p>
-          <p className="text-3xl font-bold text-emerald-600">{currencySymbol}{currentMonthIncome.toLocaleString()}</p>
+          <div className="flex items-baseline space-x-2">
+            <p className="text-3xl font-bold text-emerald-600">{currencySymbol}{displayedIncome.toLocaleString()}</p>
+            {isRolloverEnabled && openingBalance !== 0 && (
+              <span className={`text-xs font-bold ${openingBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                ({openingBalance >= 0 ? '+' : ''}{currencySymbol}{openingBalance.toLocaleString()} rollover)
+              </span>
+            )}
+          </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex flex-col justify-between h-32 relative overflow-hidden">
           <div className="absolute right-0 top-0 p-4 opacity-10">
@@ -159,7 +199,7 @@ export const DashboardView = () => {
             <p className={`text-xs font-bold uppercase tracking-wider ${netSavings >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>Net Savings</p>
             <Tooltip content="Total accumulated savings from all time" position="left">
               <span className="text-[10px] font-bold bg-white bg-opacity-50 px-2 py-1 rounded-full text-slate-600">
-                Pool: {currencySymbol}{(openingBalance + netSavings).toLocaleString()}
+                Pool: {currencySymbol}{(openingBalance + (currentMonthIncome - currentMonthExpense)).toLocaleString()}
               </span>
             </Tooltip>
           </div>
@@ -233,7 +273,7 @@ export const DashboardView = () => {
                       tickLine={false}
                       axisLine={false}
                       tickFormatter={(str) => {
-                        const d = new Date(str);
+                        const d = parseDate(str);
                         return `${d.getDate()}`;
                       }}
                     />

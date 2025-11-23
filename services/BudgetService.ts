@@ -1,12 +1,13 @@
 import { db, isMockMode } from './firebase';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { UserProfile, Category } from '../types';
+import { UserProfile, Category, CurrencyCode } from '../types';
 import { INITIAL_ENVELOPES } from '../constants';
 
 export interface BudgetConfig {
     categoryId: string; // Can be a Category enum value or custom string
     name: string;       // Display name
     limit: number;
+    currency?: CurrencyCode; // The currency this limit is set in
     color: string;
     isHidden: boolean;
     isCustom: boolean;
@@ -61,6 +62,7 @@ export const BudgetService = {
             categoryId: env.category,
             name: env.category,
             limit: env.budgeted,
+            currency: 'USD', // Default to USD for initial envelopes
             color: env.color,
             isHidden: false,
             isCustom: false

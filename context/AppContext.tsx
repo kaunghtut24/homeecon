@@ -2,9 +2,10 @@ import React, { createContext, useContext, useState, PropsWithChildren, useEffec
 import { Transaction, Envelope, ViewState, Category, CurrencyCode } from '../types';
 import { INITIAL_ENVELOPES } from '../constants';
 import { db, isMockMode } from '../services/firebase';
-import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, orderBy, or, Query, DocumentData } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { BudgetService, BudgetConfig } from '../services/BudgetService';
+import { parseDate } from '../utils/dateUtils';
 
 interface AppContextType {
   currentView: ViewState;
@@ -26,6 +27,8 @@ interface AppContextType {
   currentMonthExpense: number;
   openingBalance: number; // Rollover from previous months
   netSavings: number; // Current month savings
+  isRolloverEnabled: boolean;
+  toggleRollover: () => void;
 
   // Budget Management
   budgets: BudgetConfig[];
@@ -56,6 +59,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const STORAGE_KEY_CURRENCY = 'homeecon_currency';
 const STORAGE_KEY_RATES = 'homeecon_rates';
 const STORAGE_KEY_MOCK_TRANSACTIONS = 'homeecon_mock_transactions';
+const STORAGE_KEY_ROLLOVER = 'homeecon_rollover_enabled';
 
 // Default rates relative to USD
 const DEFAULT_RATES: Record<string, number> = {
@@ -98,6 +102,16 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
   // Date State
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
+  // Rollover State
+  const [isRolloverEnabled, setIsRolloverEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ROLLOVER);
+      return saved ? JSON.parse(saved) : false;
+    } catch (e) {
+      return false;
+    }
+  });
+
   // -- Persistence Effects --
 
   // Load Budgets
@@ -133,29 +147,42 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       return;
     }
 
-    let filterField: string;
-    let filterValue: string;
+    // Construct query
+    // If user has familyId, fetch transactions where (userId == uid) OR (familyId == familyId)
+    // Otherwise, just fetch where userId == uid
+
+    let qWithOrderBy: Query<DocumentData>;
+    let qWithoutOrderBy: Query<DocumentData>;
 
     if (userProfile?.familyId) {
-      filterField = 'familyId';
-      filterValue = userProfile.familyId;
+      qWithOrderBy = query(
+        collection(db, 'transactions'),
+        or(
+          where('userId', '==', user.uid),
+          where('familyId', '==', userProfile.familyId)
+        ),
+        orderBy('date', 'desc')
+      );
+
+      qWithoutOrderBy = query(
+        collection(db, 'transactions'),
+        or(
+          where('userId', '==', user.uid),
+          where('familyId', '==', userProfile.familyId)
+        )
+      );
     } else {
-      filterField = 'userId';
-      filterValue = user.uid;
+      qWithOrderBy = query(
+        collection(db, 'transactions'),
+        where('userId', '==', user.uid),
+        orderBy('date', 'desc')
+      );
+
+      qWithoutOrderBy = query(
+        collection(db, 'transactions'),
+        where('userId', '==', user.uid)
+      );
     }
-
-    // Try query with orderBy first (requires index)
-    // If it fails, fall back to query without orderBy (no index needed)
-    const qWithOrderBy = query(
-      collection(db, 'transactions'),
-      where(filterField, '==', filterValue),
-      orderBy('date', 'desc')
-    );
-
-    const qWithoutOrderBy = query(
-      collection(db, 'transactions'),
-      where(filterField, '==', filterValue)
-    );
 
     let currentUnsubscribe: (() => void) | null = null;
     let hasSwitchedToFallback = false;
@@ -165,7 +192,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       // Use fallback query directly to avoid index issues
       // This ensures transactions load immediately while indexes are building
       console.log('Setting up transaction listener with fallback query');
-      
+
       currentUnsubscribe = onSnapshot(
         qWithoutOrderBy,
         (snapshot) => {
@@ -174,13 +201,13 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
             // Normalize items categories to ensure they're Category enum values
             const normalizedItems = (data.items || []).map((item: any) => ({
               ...item,
-              category: typeof item.category === 'string' 
-                ? (Object.values(Category).includes(item.category as Category) 
-                    ? item.category as Category 
-                    : Category.OTHER)
+              category: typeof item.category === 'string'
+                ? (Object.values(Category).includes(item.category as Category)
+                  ? item.category as Category
+                  : Category.OTHER)
                 : (item.category || Category.OTHER)
             }));
-            
+
             return {
               ...data,
               id: doc.id,
@@ -190,8 +217,8 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
 
           // Sort client-side by date (descending)
           docs.sort((a, b) => {
-            const dateA = new Date(a.date).getTime();
-            const dateB = new Date(b.date).getTime();
+            const dateA = parseDate(a.date).getTime();
+            const dateB = parseDate(b.date).getTime();
             return dateB - dateA; // Descending order
           });
 
@@ -228,6 +255,10 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_RATES, JSON.stringify(rates));
   }, [rates]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_ROLLOVER, JSON.stringify(isRolloverEnabled));
+  }, [isRolloverEnabled]);
 
 
   // -- Actions --
@@ -297,7 +328,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
 
     // Remove id field and clean up undefined values for Firestore
     const { id, ...data } = t;
-    
+
     // Clean up undefined values - Firestore doesn't accept undefined
     // Also handle null values and ensure all required fields are valid
     const cleanData: any = {};
@@ -310,7 +341,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
         }
         return; // Skip adding undefined receiptImageUrl
       }
-      
+
       // Only include defined, non-null values
       if (value !== undefined && value !== null) {
         // Ensure exchangeRate is a valid number
@@ -321,7 +352,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
         }
       }
     });
-    
+
     // Final cleanup: Remove any undefined values that might have slipped through
     Object.keys(cleanData).forEach(key => {
       if (cleanData[key] === undefined) {
@@ -361,15 +392,17 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
     if (!cleanData.items || !Array.isArray(cleanData.items)) {
       cleanData.items = [];
     }
-    
+
     // Validate items array - ensure all items have required fields
     cleanData.items = cleanData.items
-      .filter((item: any) => item && item.name && typeof item.amount === 'number' && item.category)
+      .filter((item: any) => item && item.name && !isNaN(Number(item.amount)) && item.category)
       .map((item: any) => ({
         name: item.name || 'Item',
         amount: Number(item.amount) || 0,
         category: item.category || Category.OTHER
       }));
+
+    console.log("Adding transaction:", cleanData);
 
     try {
       await addDoc(collection(db, 'transactions'), cleanData);
@@ -413,7 +446,8 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
   // -- Budget Actions --
   const updateBudget = async (categoryId: string, limit: number) => {
     if (!userProfile) return;
-    const newBudgets = budgets.map(b => b.categoryId === categoryId ? { ...b, limit } : b);
+    // When updating, save the current homeCurrency as the budget's currency
+    const newBudgets = budgets.map(b => b.categoryId === categoryId ? { ...b, limit, currency: homeCurrency } : b);
     setBudgets(newBudgets);
     await BudgetService.saveUserBudgets(userProfile, newBudgets);
   };
@@ -424,6 +458,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       categoryId: name, // Use name as ID for custom
       name,
       limit,
+      currency: homeCurrency, // Save with current currency
       color,
       isHidden: false,
       isCustom: true
@@ -444,7 +479,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseDate(t.date);
       return tDate.getMonth() === selectedMonth.getMonth() &&
         tDate.getFullYear() === selectedMonth.getFullYear();
     });
@@ -469,7 +504,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
     const startOfSelectedMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
 
     return transactions
-      .filter(t => new Date(t.date) < startOfSelectedMonth)
+      .filter(t => parseDate(t.date) < startOfSelectedMonth)
       .reduce((sum, t) => {
         const amount = convertAmount(t.total, t.currency);
         return t.type === 'income' ? sum + amount : sum - amount;
@@ -481,12 +516,21 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
     // Filter out hidden categories
     const currentEnvelopes: Envelope[] = budgets
       .filter(b => !b.isHidden)
-      .map(b => ({
-        category: b.categoryId as Category, // Cast for now, or update Envelope type
-        budgeted: b.limit,
-        spent: 0,
-        color: b.color
-      }));
+
+      .map(b => {
+        // Convert budget limit to home currency if it has a stored currency
+        // If no currency is stored (legacy), assume it's already in the desired unit (raw) or treat as USD?
+        // We'll treat missing currency as "raw" (no conversion) to avoid breaking existing views,
+        // but users should update their budgets to fix this.
+        const limit = b.currency ? convertAmount(b.limit, b.currency) : b.limit;
+
+        return {
+          category: b.categoryId as Category, // Cast for now, or update Envelope type
+          budgeted: limit,
+          spent: 0,
+          color: b.color
+        };
+      });
 
     filteredTransactions.forEach(t => {
       if (t.type === 'expense') {
@@ -495,7 +539,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
           t.items.forEach(item => {
             // Skip items with invalid amounts
             if (!item.amount || isNaN(item.amount) || item.amount <= 0) return;
-            
+
             // Ensure category is a valid Category enum value (handle string to enum conversion)
             let itemCategory: Category;
             if (typeof item.category === 'string') {
@@ -505,7 +549,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
             } else {
               itemCategory = item.category || Category.OTHER;
             }
-            
+
             const envIndex = currentEnvelopes.findIndex(e => e.category === itemCategory);
             const itemNormalized = convertAmount(item.amount, t.currency);
 
@@ -534,7 +578,7 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
   const getTransactionsForPeriod = (period: 'month' | 'quarter' | 'year') => {
     const now = selectedMonth;
     return transactions.filter(t => {
-      const tDate = new Date(t.date);
+      const tDate = parseDate(t.date);
       if (period === 'month') {
         return tDate.getMonth() === now.getMonth() && tDate.getFullYear() === now.getFullYear();
       } else if (period === 'quarter') {
@@ -545,6 +589,10 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
         return tDate.getFullYear() === now.getFullYear();
       }
     });
+  };
+
+  const toggleRollover = () => {
+    setIsRolloverEnabled(prev => !prev);
   };
 
   return (
@@ -575,7 +623,9 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
       updateBudget,
       addCategory,
       toggleCategory,
-      getTransactionsForPeriod
+      getTransactionsForPeriod,
+      isRolloverEnabled,
+      toggleRollover
     }}>
       {children}
     </AppContext.Provider>

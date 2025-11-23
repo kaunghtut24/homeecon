@@ -14,7 +14,12 @@ export const parseReceiptImage = async (base64Image: string, mimeType: string = 
   const ai = getGenAI();
 
   const prompt = `
-    Analyze this receipt image. Extract the merchant name, date (YYYY-MM-DD), subtotal, tax, and total amount.
+    Analyze this image, which could be a printed receipt or a handwritten expense note/ledger.
+    Extract the merchant name (or payee/description for handwritten notes), date (YYYY-MM-DD), subtotal, tax, and total amount.
+    
+    **Handwritten Text Handling:**
+    - If the image is a handwritten note, do your best to decipher the handwriting.
+    - "Merchant Name" can be the person paid, the item bought, or a short description of the expense (e.g., "Lunch", "Taxi", "Market").
     
     **Currency Detection:** Look for symbols like $, €, £, ¥, ₹ (Rupee), K (Kyat). 
     Return the 3-letter ISO code (USD, EUR, GBP, INR, MMK, etc). Default to 'USD' if unsure.

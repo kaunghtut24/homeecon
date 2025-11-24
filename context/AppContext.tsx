@@ -286,14 +286,12 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
   };
 
   const refreshRates = async () => {
-    const newRates = { ...rates };
-    Object.keys(newRates).forEach(key => {
-      if (key !== 'USD') {
-        const fluctuation = (Math.random() * 0.02) - 0.01;
-        newRates[key] = parseFloat((newRates[key] + fluctuation).toFixed(4));
-      }
-    });
-    setRates(newRates);
+    // In a real app, this would fetch from an API
+    // For now, we'll just keep the default rates to ensure stability
+    // or we could fetch from a free API if available.
+    // Removing the random fluctuation as it's confusing for users.
+    console.log("Refreshing rates... (using static defaults for stability)");
+    setRates(DEFAULT_RATES);
   };
 
   const addTransaction = async (newTransaction: Transaction) => {
@@ -406,9 +404,9 @@ export const AppProvider = ({ children }: PropsWithChildren<{}>) => {
 
     try {
       await addDoc(collection(db, 'transactions'), cleanData);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Error adding transaction: ", e);
-      const errorMessage = e?.message || e?.code || "Unknown error";
+      const errorMessage = e instanceof Error ? e.message : "Unknown error";
       alert(`Failed to save transaction: ${errorMessage}`);
     }
   };

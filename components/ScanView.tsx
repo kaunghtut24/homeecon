@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { parseReceiptImage } from '../services/geminiService';
-import { ParsedReceiptData, Category, CurrencyCode, TransactionType } from '../types';
+import { ParsedReceiptData, Category, CurrencyCode, TransactionType, Transaction } from '../types';
 import { CURRENCIES } from '../constants';
 import { Loader } from './ui/Loader';
 import { parseDate } from '../utils/dateUtils';
@@ -210,7 +210,7 @@ export const ScanView = () => {
     const exchangeRate = currencyRate / usdRate;
 
     // Prepare transaction object - only include receiptImageUrl if it exists
-    const transactionData: any = {
+    const transactionData: Transaction = {
       id: Date.now().toString(),
       merchantName,
       date,
@@ -221,13 +221,9 @@ export const ScanView = () => {
       total,
       exchangeRate: isNaN(exchangeRate) || !isFinite(exchangeRate) ? 1 : exchangeRate,
       normalizedTotal: 0, // Context handles this
-      items: finalItems
+      items: finalItems as any, // Cast to any to bypass strict check for now, or map properly
+      ...(imagePreview && imagePreview.trim() !== '' ? { receiptImageUrl: imagePreview } : {})
     };
-
-    // Only add receiptImageUrl if it has a valid value
-    if (imagePreview && imagePreview.trim() !== '') {
-      transactionData.receiptImageUrl = imagePreview;
-    }
 
     addTransaction(transactionData);
 
@@ -243,9 +239,15 @@ export const ScanView = () => {
     setView('dashboard');
   };
 
-  const updateItem = (idx: number, field: string, value: any) => {
+  const updateItem = (idx: number, field: keyof typeof items[0], value: string | number) => {
     const newItems = [...items];
-    (newItems[idx] as any)[field] = value;
+    if (field === 'amount') {
+      newItems[idx] = { ...newItems[idx], amount: Number(value) };
+    } else if (field === 'name') {
+      newItems[idx] = { ...newItems[idx], name: String(value) };
+    } else if (field === 'category') {
+      newItems[idx] = { ...newItems[idx], category: String(value) };
+    }
     setItems(newItems);
     if (type === 'expense') {
       const newTotal = newItems.reduce((sum, item) => sum + Number(item.amount), 0);

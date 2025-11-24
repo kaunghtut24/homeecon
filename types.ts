@@ -78,7 +78,7 @@ export interface Envelope {
   color: string;
 }
 
-export type ViewState = 'dashboard' | 'scan' | 'reports';
+export type ViewState = 'dashboard' | 'scan' | 'reports' | 'categories' | 'settings';
 
 export interface ParsedReceiptData {
   merchantName: string;

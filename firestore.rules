@@ -22,7 +22,9 @@ service cloud.firestore {
       // This is safe because invite codes are meant to be shared and only contain
       // non-sensitive data (id, name, members array, createdAt)
       // Unauthenticated reads are needed for signup validation before user is created
-      allow read: if true;
+      // CHANGED: Restrict to 'get' only (single document), deny 'list' (collection query)
+      allow get: if true;
+      allow list: if false;
       
       // Any authenticated user can create a family
       allow create: if request.auth != null;

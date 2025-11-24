@@ -109,9 +109,9 @@ export const parseReceiptImage = async (base64Image: string, mimeType: string = 
     }
 
     return data;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Gemini OCR Error:", error);
-    const errorMessage = error.message || "Unknown error occurred";
+    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
     throw new Error(`Failed to analyze receipt: ${errorMessage}`);
   }
 };

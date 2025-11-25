@@ -29,9 +29,7 @@ export const LoginView = ({ onToggleMode }: LoginViewProps) => {
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
             <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-100">
                 <div className="text-center mb-8">
-                    <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200 mx-auto mb-4">
-                        <span className="text-white font-bold text-2xl">H</span>
-                    </div>
+                    <img src="/logo.svg" alt="HomeEcon Logo" className="w-12 h-12 rounded-xl shadow-lg shadow-emerald-200 mx-auto mb-4" />
                     <h2 className="text-2xl font-bold text-slate-800">Welcome Back</h2>
                     <p className="text-slate-500 mt-2">Sign in to continue to HomeEcon</p>
                 </div>

@@ -27,6 +27,7 @@ export const SignupView = ({ onToggleMode }: SignupViewProps) => {
         <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
             <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
                 <div className="text-center mb-8">
+                    <img src="/logo.svg" alt="HomeEcon Logo" className="w-12 h-12 rounded-xl shadow-lg shadow-emerald-200 mx-auto mb-4" />
                     <h1 className="text-3xl font-bold text-slate-800 mb-2">Create Account</h1>
                     <p className="text-slate-500">Join HomeEcon to manage family finances</p>
                 </div>

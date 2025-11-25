@@ -19,9 +19,7 @@ const MainLayout = () => {
       {/* Sidebar for Desktop */}
       <nav className="hidden md:flex flex-col w-72 bg-white border-r border-slate-200 h-screen sticky top-0 p-6 space-y-8 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
         <div className="flex items-center space-x-3 px-2">
-          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200">
-            <span className="text-white font-bold text-xl">H</span>
-          </div>
+          <img src="/logo.svg" alt="HomeEcon Logo" className="w-10 h-10 rounded-xl shadow-lg shadow-emerald-200" />
           <span className="text-xl font-bold text-slate-800 tracking-tight">HomeEcon</span>
         </div>
 
@@ -85,9 +83,7 @@ const MainLayout = () => {
       {/* Mobile Header */}
       <div className="md:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-20 shadow-sm">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold">H</span>
-          </div>
+          <img src="/logo.svg" alt="HomeEcon Logo" className="w-8 h-8 rounded-lg" />
           <span className="text-lg font-bold text-slate-800">HomeEcon</span>
         </div>
         <button onClick={signOut} className="text-slate-400 hover:text-red-500">

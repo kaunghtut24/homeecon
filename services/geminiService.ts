@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ParsedReceiptData } from '../types';
 
 const getGenAI = () => {
-  const apiKey = process.env.API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey) {
     console.error("Missing Gemini API Key. Please set VITE_GEMINI_API_KEY in your .env file.");
     throw new Error("Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file.");
